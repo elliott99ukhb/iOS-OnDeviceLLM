@@ -19,8 +19,8 @@ struct ChatView: View {
     private let starters = [
         "Explain how on-device AI works, simply.",
         "Write a haiku about the sea.",
-        "Plan a relaxed weekend in Lisbon.",
-        "Give me 3 dinner ideas from pantry staples."
+        "Plan a relaxed weekend in London.",
+        "Give me 3 pasta dinner ideas."
     ]
 
     var body: some View {
