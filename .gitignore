@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Xcode build output & derived data
+build/
+DerivedData/
+*.xcuserstate
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode per-user state (UI layout, breakpoints, local schemes)
+xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+Package.resolved
+
+# CocoaPods / Carthage (not used here, ignored for safety)
+Pods/
+Carthage/Build/
+
+# Misc
+*.log
