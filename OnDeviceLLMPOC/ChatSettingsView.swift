@@ -19,7 +19,7 @@ struct ChatSettingsView: View {
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
                         }
-                        Slider(value: $store.settings.temperature, in: 0...2, step: 0.05)
+                        Slider(value: $store.settings.temperature, in: 0...1, step: 0.01)
                         Text("Lower is focused and repeatable; higher is more creative.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -41,7 +41,7 @@ struct ChatSettingsView: View {
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
                         }
-                        Slider(value: $store.settings.maxResponseTokens, in: 0...1024, step: 32)
+                        Slider(value: $store.settings.maxResponseTokens, in: 0...4096, step: 32)
                     }
                 } header: {
                     Text("Response")
