@@ -169,38 +169,42 @@ struct ChatView: View {
                 attachmentPreview(pendingImage)
             }
 
-            HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .bottom, spacing: 8) {
+                // iMessage-style "+" attachment button in a circle.
                 PhotosPicker(selection: $pickedItem, matching: .images) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 22))
-                        .frame(width: 36, height: 36)
+                    Image(systemName: "plus")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, height: 34)
+                        .background(Color(.secondarySystemBackground), in: Circle())
                 }
                 .disabled(store.isResponding)
 
-                // TextField(axis: .vertical) is the modern Apple component for a
-                // chat input that grows with the text; we give it a comfortable
-                // height and a rounded fill instead of the cramped .roundedBorder.
-                TextField("Message", text: $input, axis: .vertical)
-                    .font(.body)
-                    .lineLimit(1...6)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .frame(minHeight: 38)
-                    .background(Color(.secondarySystemBackground),
-                                in: RoundedRectangle(cornerRadius: 19))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 19)
-                            .stroke(Color(.separator).opacity(0.6), lineWidth: 0.5)
-                    )
-                    .onSubmit(send)
+                // Capsule field with the send/stop control tucked inside on the
+                // right, mirroring the iMessage composer. TextField(axis: .vertical)
+                // is the modern Apple component for an input that grows with text.
+                HStack(alignment: .bottom, spacing: 4) {
+                    TextField("Message", text: $input, axis: .vertical)
+                        .font(.body)
+                        .lineLimit(1...6)
+                        .padding(.leading, 14)
+                        .padding(.vertical, 7)
+                        .onSubmit(send)
 
-                Button(action: store.isResponding ? stop : send) {
-                    Image(systemName: store.isResponding ? "stop.circle.fill" : "arrow.up.circle.fill")
-                        .font(.system(size: 32))
-                        .symbolRenderingMode(.hierarchical)
+                    Button(action: store.isResponding ? stop : send) {
+                        Image(systemName: store.isResponding ? "stop.circle.fill" : "arrow.up.circle.fill")
+                            .font(.system(size: 28))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(store.isResponding ? Color.red : Color.accentColor)
+                    }
+                    .disabled(!store.isResponding && !canSend)
+                    .padding(.trailing, 4)
+                    .padding(.bottom, 3)
+                    .accessibilityLabel(store.isResponding ? "Stop" : "Send")
                 }
-                .disabled(!store.isResponding && !canSend)
-                .accessibilityLabel(store.isResponding ? "Stop" : "Send")
+                .frame(minHeight: 36)
+                .background(Color(.systemBackground), in: Capsule())
+                .overlay(Capsule().stroke(Color(.separator), lineWidth: 1))
             }
         }
         .padding(.horizontal, 12)
