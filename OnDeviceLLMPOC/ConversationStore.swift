@@ -26,6 +26,7 @@ final class ConversationStore {
     }
 
     private var session: LanguageModelSession
+    private var generationTask: Task<Void, Never>?
 
     private enum Keys {
         static let instructions = "systemInstructions"
@@ -52,7 +53,8 @@ final class ConversationStore {
 
     // MARK: - Sending
 
-    func send(_ rawText: String, image: UIImage?) async {
+    /// Appends the user's turn and kicks off a cancellable streaming reply.
+    func submit(_ rawText: String, image: UIImage?) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || image != nil else { return }
         guard !isResponding else { return }
@@ -63,11 +65,27 @@ final class ConversationStore {
         messages.append(ChatMessage(role: .user, text: text, image: image))
         let replyID = UUID()
         messages.append(ChatMessage(id: replyID, role: .assistant, text: ""))
+
+        start(promptText: promptText, image: image, replyID: replyID)
+    }
+
+    /// Cancels the in-flight response. Any text streamed so far is kept.
+    func stop() {
+        generationTask?.cancel()
+    }
+
+    private func start(promptText: String, image: UIImage?, replyID: UUID) {
         isResponding = true
-        defer { isResponding = false }
+        generationTask = Task {
+            await generate(promptText: promptText, image: image, replyID: replyID, allowRollover: true)
+            isResponding = false
+            generationTask = nil
+            persist()
+        }
+    }
 
+    private func generate(promptText: String, image: UIImage?, replyID: UUID, allowRollover: Bool) async {
         let options = settings.generationOptions
-
         do {
             if let image, let cgImage = image.modelCGImage {
                 // Multimodal prompt: an image attachment plus the question.
@@ -76,25 +94,103 @@ final class ConversationStore {
                     promptText
                 }
                 for try await partial in stream {
+                    if Task.isCancelled { break }
                     update(replyID, text: partial.content)
                 }
             } else {
                 let stream = session.streamResponse(to: promptText, options: options)
                 for try await partial in stream {
+                    if Task.isCancelled { break }
                     update(replyID, text: partial.content)
                 }
             }
+            if Task.isCancelled { markStopped(replyID) }
+        } catch is CancellationError {
+            markStopped(replyID)
+        } catch let error as LanguageModelSession.GenerationError {
+            // The on-device context window is small; when a long chat overflows we
+            // condense the history into a fresh session and retry once, so the
+            // conversation keeps working instead of erroring on every message.
+            if case .exceededContextWindowSize = error, allowRollover, !Task.isCancelled {
+                await rollOverContext()
+                await generate(promptText: promptText, image: image, replyID: replyID, allowRollover: false)
+            } else if Task.isCancelled {
+                markStopped(replyID)
+            } else {
+                update(replyID, text: "⚠️ \(error.localizedDescription)", isError: true)
+            }
         } catch {
-            update(replyID, text: "⚠️ \(error.localizedDescription)", isError: true)
+            if Task.isCancelled { markStopped(replyID) }
+            else { update(replyID, text: "⚠️ \(error.localizedDescription)", isError: true) }
         }
-
-        persist()
     }
 
     private func update(_ id: UUID, text: String, isError: Bool = false) {
         guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[index].text = text
         messages[index].isError = isError
+    }
+
+    private func markStopped(_ id: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        if messages[index].text.isEmpty {
+            messages[index].text = "_Stopped._"
+        }
+    }
+
+    // MARK: - Context rollover
+
+    /// Replaces the full session with a fresh one seeded by a short summary of the
+    /// conversation so far, freeing up the context window.
+    private func rollOverContext() async {
+        // Exclude the in-flight user message + empty reply bubble.
+        let prior = Array(messages.dropLast(2))
+        let summary = await summarize(prior)
+        let seeded = instructions
+            + "\n\nSummary of the conversation so far (older messages were condensed "
+            + "to fit on-device memory):\n" + summary
+        session = LanguageModelSession(instructions: seeded)
+    }
+
+    private func summarize(_ msgs: [ChatMessage]) async -> String {
+        let digest = msgs.suffix(12).map { m in
+            let who = m.role == .user ? "User" : "Assistant"
+            return "\(who): \(m.text.prefix(400))"
+        }.joined(separator: "\n")
+        guard !digest.isEmpty else { return "(no prior context)" }
+
+        do {
+            let summarizer = LanguageModelSession(
+                instructions: "You summarize conversations into concise, factual notes."
+            )
+            let response = try await summarizer.respond(
+                to: "Summarize the key facts, decisions, and context from this conversation "
+                    + "so it can be continued. Use short bullet points:\n\n\(digest)",
+                options: GenerationOptions(temperature: 0.3, maximumResponseTokens: 240)
+            )
+            return response.content
+        } catch {
+            // Fall back to the raw recent digest if summarizing fails.
+            return digest
+        }
+    }
+
+    // MARK: - Regenerate
+
+    /// Re-runs the prompt that produced the last assistant reply, after rolling the
+    /// session's memory back one turn so the new answer isn't biased by the old one.
+    func regenerateLast() {
+        guard !isResponding, messages.count >= 2 else { return }
+        guard messages.last?.role == .assistant else { return }
+        let user = messages[messages.count - 2]
+        guard user.role == .user else { return }
+
+        // Drop the last prompt + response from the model's memory.
+        let trimmed = Transcript(entries: session.transcript.dropLast(2))
+        session = LanguageModelSession(transcript: trimmed)
+        messages.removeLast(2)
+
+        submit(user.text, image: user.image)
     }
 
     // MARK: - Conversation lifecycle
@@ -106,8 +202,10 @@ final class ConversationStore {
 
     /// Clears the screen and the model's memory, applying the current instructions.
     func newConversation() {
+        generationTask?.cancel()
         session = LanguageModelSession(instructions: instructions)
         messages = []
+        isResponding = false
         try? FileManager.default.removeItem(at: Self.transcriptURL)
     }
 
@@ -119,13 +217,17 @@ final class ConversationStore {
         return base.appendingPathComponent("conversation.json")
     }()
 
+    /// Encodes + writes off the main actor so long histories don't hitch the UI.
     private func persist() {
-        do {
-            let data = try JSONEncoder().encode(session.transcript)
-            try data.write(to: Self.transcriptURL, options: .atomic)
-        } catch {
-            // Persistence is best-effort; the in-memory session is still intact.
-            print("ConversationStore: failed to persist transcript — \(error)")
+        let transcript = session.transcript
+        let url = Self.transcriptURL
+        Task.detached(priority: .background) {
+            do {
+                let data = try JSONEncoder().encode(transcript)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                print("ConversationStore: failed to persist transcript — \(error)")
+            }
         }
     }
 

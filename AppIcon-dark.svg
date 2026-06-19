@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#15132E"/>
+      <stop offset="0.55" stop-color="#241152"/>
+      <stop offset="1" stop-color="#3A0F6B"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="362" y1="320" x2="662" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <g>
+    <path d="M340 600 L300 742 L470 648 Z" fill="#F2F2F7"/>
+    <rect x="232" y="250" width="560" height="410" rx="120" fill="#F2F2F7"/>
+  </g>
+
+  <path d="M512 322 Q554 414 662 455 Q554 496 512 588 Q470 496 362 455 Q470 414 512 322 Z"
+        fill="url(#spark)"/>
+  <path d="M690 330 Q708 372 752 390 Q708 408 690 450 Q672 408 628 390 Q672 372 690 330 Z"
+        fill="url(#spark)" opacity="0.9"/>
+</svg>

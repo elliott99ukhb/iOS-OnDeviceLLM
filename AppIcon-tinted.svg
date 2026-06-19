@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Grayscale, transparent background. iOS supplies the dark backdrop and applies
+     the user's tint based on luminance: the bubble (white) tints brightest, the
+     sparkle (mid-grey) stays a touch darker so the shape still reads. -->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <g>
+    <path d="M340 600 L300 742 L470 648 Z" fill="#FFFFFF"/>
+    <rect x="232" y="250" width="560" height="410" rx="120" fill="#FFFFFF"/>
+  </g>
+
+  <path d="M512 322 Q554 414 662 455 Q554 496 512 588 Q470 496 362 455 Q470 414 512 322 Z"
+        fill="#8E8E93"/>
+  <path d="M690 330 Q708 372 752 390 Q708 408 690 450 Q672 408 628 390 Q672 372 690 330 Z"
+        fill="#8E8E93"/>
+</svg>

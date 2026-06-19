@@ -43,6 +43,10 @@ struct ChatSettingsView: View {
                         }
                         Slider(value: $store.settings.maxResponseTokens, in: 0...4096, step: 32)
                     }
+
+                    Button("Reset to defaults") {
+                        store.settings = GenerationSettings()
+                    }
                 } header: {
                     Text("Response")
                 } footer: {

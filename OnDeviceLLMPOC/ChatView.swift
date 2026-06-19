@@ -12,6 +12,16 @@ struct ChatView: View {
     @State private var pickedItem: PhotosPickerItem?
     @State private var pendingImage: UIImage?
     @State private var showSettings = false
+    @State private var showScrollToBottom = false
+
+    private let bottomAnchor = "bottom"
+
+    private let starters = [
+        "Explain how on-device AI works, simply.",
+        "Write a haiku about the sea.",
+        "Plan a relaxed weekend in Lisbon.",
+        "Give me 3 dinner ideas from pantry staples."
+    ]
 
     var body: some View {
         NavigationStack {
@@ -24,18 +34,14 @@ struct ChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        store.newConversation()
-                    } label: {
+                    Button { store.newConversation() } label: {
                         Image(systemName: "square.and.pencil")
                     }
-                    .disabled(store.messages.isEmpty || store.isResponding)
+                    .disabled(store.messages.isEmpty)
                     .accessibilityLabel("New conversation")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showSettings = true
-                    } label: {
+                    Button { showSettings = true } label: {
                         Image(systemName: "slider.horizontal.3")
                     }
                     .accessibilityLabel("Settings")
@@ -49,6 +55,9 @@ struct ChatView: View {
         .onChange(of: pickedItem) { _, item in
             Task { await loadAttachment(item) }
         }
+        .onChange(of: store.isResponding) { wasResponding, nowResponding in
+            if wasResponding && !nowResponding { haptic(.soft) }   // reply finished
+        }
     }
 
     // MARK: - Transcript
@@ -58,13 +67,14 @@ struct ChatView: View {
             ScrollView {
                 if store.messages.isEmpty {
                     emptyState
-                        .padding(.top, 80)
+                        .padding(.top, 60)
                         .padding(.horizontal)
                 } else {
                     LazyVStack(spacing: 12) {
                         ForEach(store.messages) { message in
                             MessageBubble(message: message)
                                 .id(message.id)
+                                .contextMenu { menu(for: message) }
                         }
                         Color.clear.frame(height: 1).id(bottomAnchor)
                     }
@@ -72,12 +82,51 @@ struct ChatView: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+            .onScrollGeometryChange(for: Bool.self) { geo in
+                geo.contentOffset.y + geo.containerSize.height < geo.contentSize.height - 80
+            } action: { _, isAwayFromBottom in
+                showScrollToBottom = isAwayFromBottom
+            }
             .onChange(of: store.messages.last?.text) { _, _ in scrollToBottom(proxy) }
             .onChange(of: store.messages.count) { _, _ in scrollToBottom(proxy) }
+            .overlay(alignment: .bottomTrailing) {
+                if showScrollToBottom {
+                    Button { scrollToBottom(proxy) } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.body.weight(.semibold))
+                            .padding(10)
+                            .background(.regularMaterial, in: Circle())
+                            .overlay(Circle().stroke(.quaternary))
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 8)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: showScrollToBottom)
         }
     }
 
-    private let bottomAnchor = "bottom"
+    @ViewBuilder
+    private func menu(for message: ChatMessage) -> some View {
+        if !message.text.isEmpty {
+            Button {
+                UIPasteboard.general.string = message.text
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+        }
+        if message.role == .assistant,
+           message.id == store.messages.last?.id,
+           !store.isResponding {
+            Button {
+                haptic(.light)
+                store.regenerateLast()
+            } label: {
+                Label("Regenerate", systemImage: "arrow.clockwise")
+            }
+        }
+    }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         withAnimation(.easeOut(duration: 0.2)) {
@@ -86,11 +135,29 @@ struct ChatView: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("Start chatting", systemImage: "bubble.left.and.bubble.right")
-        } description: {
-            Text("Ask anything and watch the on-device model stream its reply. "
-                 + "Attach a photo to ask about an image. Your conversation is remembered between launches.")
+        VStack(spacing: 24) {
+            ContentUnavailableView {
+                Label("Start chatting", systemImage: "bubble.left.and.bubble.right")
+            } description: {
+                Text("Ask anything and watch the on-device model stream its reply. "
+                     + "Attach a photo to ask about an image. Your conversation is remembered between launches.")
+            }
+
+            VStack(spacing: 8) {
+                ForEach(starters, id: \.self) { starter in
+                    Button {
+                        sendStarter(starter)
+                    } label: {
+                        Text(starter)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Color(.secondarySystemBackground),
+                                        in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 
@@ -114,15 +181,13 @@ struct ChatView: View {
                     .lineLimit(1...5)
                     .onSubmit(send)
 
-                Button(action: send) {
-                    if store.isResponding {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.title)
-                    }
+                Button(action: store.isResponding ? stop : send) {
+                    Image(systemName: store.isResponding ? "stop.circle.fill" : "arrow.up.circle.fill")
+                        .font(.title)
+                        .symbolRenderingMode(.hierarchical)
                 }
-                .disabled(!canSend)
+                .disabled(!store.isResponding && !canSend)
+                .accessibilityLabel(store.isResponding ? "Stop" : "Send")
             }
         }
         .padding([.horizontal, .bottom])
@@ -165,7 +230,18 @@ struct ChatView: View {
         input = ""
         pendingImage = nil
         pickedItem = nil
-        Task { await store.send(text, image: image) }
+        haptic(.light)
+        store.submit(text, image: image)
+    }
+
+    private func stop() {
+        haptic(.rigid)
+        store.stop()
+    }
+
+    private func sendStarter(_ text: String) {
+        haptic(.light)
+        store.submit(text, image: nil)
     }
 
     private func loadAttachment(_ item: PhotosPickerItem?) async {
@@ -174,6 +250,10 @@ struct ChatView: View {
            let image = UIImage(data: data) {
             pendingImage = image.downscaled()
         }
+    }
+
+    private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+        UIImpactFeedbackGenerator(style: style).impactOccurred()
     }
 }
 
