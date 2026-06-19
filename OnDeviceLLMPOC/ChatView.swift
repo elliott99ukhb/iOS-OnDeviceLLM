@@ -169,29 +169,42 @@ struct ChatView: View {
                 attachmentPreview(pendingImage)
             }
 
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 10) {
                 PhotosPicker(selection: $pickedItem, matching: .images) {
-                    Image(systemName: "photo.on.rectangle")
-                        .font(.title3)
+                    Image(systemName: "photo")
+                        .font(.system(size: 22))
+                        .frame(width: 36, height: 36)
                 }
                 .disabled(store.isResponding)
 
+                // TextField(axis: .vertical) is the modern Apple component for a
+                // chat input that grows with the text; we give it a comfortable
+                // height and a rounded fill instead of the cramped .roundedBorder.
                 TextField("Message", text: $input, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...5)
+                    .font(.body)
+                    .lineLimit(1...6)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .frame(minHeight: 38)
+                    .background(Color(.secondarySystemBackground),
+                                in: RoundedRectangle(cornerRadius: 19))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 19)
+                            .stroke(Color(.separator).opacity(0.6), lineWidth: 0.5)
+                    )
                     .onSubmit(send)
 
                 Button(action: store.isResponding ? stop : send) {
                     Image(systemName: store.isResponding ? "stop.circle.fill" : "arrow.up.circle.fill")
-                        .font(.title)
+                        .font(.system(size: 32))
                         .symbolRenderingMode(.hierarchical)
                 }
                 .disabled(!store.isResponding && !canSend)
                 .accessibilityLabel(store.isResponding ? "Stop" : "Send")
             }
         }
-        .padding([.horizontal, .bottom])
-        .padding(.top, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private func attachmentPreview(_ image: UIImage) -> some View {
